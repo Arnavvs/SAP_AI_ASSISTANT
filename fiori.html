@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>SAP Fiori AI Assistant</title>
+  <script
+    src="https://sapui5.hana.ondemand.com/resources/sap-ui-core.js"
+    id="sap-ui-bootstrap"
+    data-sap-ui-theme="sap_fiori_3"
+    data-sap-ui-libs="sap.m"
+    data-sap-ui-compatVersion="edge"
+    data-sap-ui-preload="async">
+  </script>
+</head>
+
+<body class="sapUiBody" id="content">
+  <script>
+    sap.ui.getCore().attachInit(function () {
+      const oInput = new sap.m.Input("queryInput", {
+        placeholder: "Type your SAP query here...",
+        width: "100%"
+      });
+
+      const oButton = new sap.m.Button("runQueryBtn", {
+        text: "Run Query",
+        type: "Emphasized",
+        press: async function () {
+          const query = oInput.getValue();
+          const oSuggestionText = sap.ui.getCore().byId("suggestionText");
+          const oInterpretationText = sap.ui.getCore().byId("interpretationText");
+          const oResultBox = sap.ui.getCore().byId("resultBox");
+
+          oSuggestionText.setText("Loading...");
+          oInterpretationText.setText("");
+          oResultBox.removeAllItems();
+
+          try {
+            const response = await fetch("http://localhost:5000/ask", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ user_query: query })
+            });
+
+            const result = await response.json();
+            const data = result.data || {};
+
+            for (const [viewName, entries] of Object.entries(data)) {
+              const table = new sap.m.Table({
+                headerText: `📘 View: ${viewName}`,
+                inset: true,
+                columns: [],
+                noDataText: entries.length ? "" : "No records found."
+              });
+
+              if (entries.length > 0) {
+                const visibleKeys = Object.keys(entries[0]).filter(
+                  k => !k.startsWith("__") && !k.includes("/__deferred")
+                );
+
+                const prettyNames = {
+                  "BusinessPartnerID": "Partner ID",
+                  "CompanyName": "Company",
+                  "EmailAddress": "Email",
+                  "CurrencyCode": "Currency",
+                  "Address/City": "City",
+                  "Address/Country": "Country"
+                };
+
+                visibleKeys.forEach(key => {
+                  table.addColumn(new sap.m.Column({
+                    header: new sap.m.Label({
+                      text: prettyNames[key] || key,
+                      wrapping: true
+                    })
+                  }));
+                });
+
+                const template = new sap.m.ColumnListItem({
+                  cells: visibleKeys.map(key =>
+                    new sap.m.Text({ text: `{${key}}` })
+                  )
+                });
+
+                const model = new sap.ui.model.json.JSONModel(entries);
+                table.setModel(model);
+                table.bindItems("/", template);
+              }
+
+              oResultBox.addItem(table);
+            }
+
+            oSuggestionText.setText("💡 Suggestion: " + (result.suggestion || "None"));
+            oInterpretationText.setText("📊 Interpretation: " + (result.interpretation || "None"));
+          } catch (err) {
+            oSuggestionText.setText("Error: " + err.message);
+          }
+        }
+      });
+
+      const oSuggestionText = new sap.m.Text("suggestionText", { wrapping: true });
+      const oInterpretationText = new sap.m.Text("interpretationText", { wrapping: true });
+      const oResultBox = new sap.m.VBox("resultBox", {});
+
+      const oPage = new sap.m.Page({
+        title: "SAP Fiori AI Query Assistant",
+        content: [
+          new sap.m.VBox({
+            items: [
+              oInput,
+              new sap.m.Toolbar({ content: [oButton] }),
+              oResultBox,
+              new sap.m.Panel({
+                headerText: "💡 AI Suggestions",
+                content: [oSuggestionText]
+              }),
+              new sap.m.Panel({
+                headerText: "📊 AI Interpretation",
+                content: [oInterpretationText]
+              })
+            ],
+            width: "100%"
+          })
+        ]
+      });
+
+      new sap.m.App({
+        initialPage: oPage.getId(),
+        pages: [oPage]
+      }).placeAt("content");
+    });
+  </script>
+</body>
+</html>
